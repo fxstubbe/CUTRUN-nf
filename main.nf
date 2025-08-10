@@ -10,8 +10,7 @@ include { CleanReads } from './workflows/trimgalore.nf'
 
 workflow {
 
+//Calls the cleanRead workflow
     CleanReads()
 
-  // view the outputs emitted by the workflow
-    //HELLO.out.view { "Output: $it" }
 }

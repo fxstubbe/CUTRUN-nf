@@ -1,3 +1,3 @@
 id,group,replicate,fastq_path_1,fastq_path_2,control
-N2_K27me3_1,H3K27me3,1,/Users/stubbe/Desktop/Ressources/CUTandRUN/Run1/fastq/N2_K27_1_S11_L002_R1_001.fastq.gz,/Users/stubbe/Desktop/Ressources/CUTandRUN/Run1/fastq/N2_K27_1_S11_L002_R2_001.fastq.gz,igg_ctrl
-F119_K27me3_1,H3K27me3,1,/Users/stubbe/Desktop/Ressources/CUTandRUN/Run1/fastq/F119_K27_1_S18_L002_R1_001.fastq.gz,/Users/stubbe/Desktop/Ressources/CUTandRUN/Run1/fastq/F119_K27_1_S18_L002_R2_001.fastq.gz,igg_ctrl
+N2_K27me3_1,H3K27me3,1,/mnt/d/Academics/NGS/CR_reads/N2_K27_1_S11_L002_R1_001.fastq.gz,/mnt/d/Academics/NGS/CR_reads/N2_K27_1_S11_L002_R2_001.fastq.gz,igg_ctrl
+F119_K27me3_1,H3K27me3,1,/mnt/d/Academics/NGS/CR_reads/F119_K27_1_S18_L002_R1_001.fastq.gz,/mnt/d/Academics/NGS/CR_reads/F119_K27_1_S18_L002_R2_001.fastq.gz,igg_ctrl
