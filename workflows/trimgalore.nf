@@ -21,7 +21,9 @@ include { PICARD_MARKDUPLICATES   } from '../modules/nf-core/picard/markduplicat
 include { PICARD_ADDORREPLACEREADGROUPS } from '../modules/nf-core/picard/addorreplacereadgroups/main'
 
 //Import Suworkflows
-include { BAM_SORT_STATS_SAMTOOLS } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
+include { BAM_SORT_STATS_SAMTOOLS   } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
+include { BAM_SORT_STATS_SAMTOOLS as SAMTOOLS_VIEW_SORT } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
+
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -101,19 +103,16 @@ workflow CleanReads {
     BAM_SORT_STATS_SAMTOOLS( BOWTIE2_TARGET_ALIGN.out.bam, fasta_channel)
 
     // Filter based on q-score
-
     samtool_ch = BAM_SORT_STATS_SAMTOOLS.out.bam
-    .join(BAM_SORT_STATS_SAMTOOLS.out.bai)  // join on meta
-    .map { meta, bam, bai ->
-        [meta, bam, bai ]   // bai replaces your []
-    }
+                                        .join(BAM_SORT_STATS_SAMTOOLS.out.bai)  // join on meta
+                                        .map { meta, bam, bai ->
+                                            [meta, bam, bai ]   // bai replaces your []
+                                        }
+    SAMTOOLS_VIEW(samtool_ch, fasta_channel, [], [])
 
-    SAMTOOLS_VIEW(
-         samtool_ch, 
-         fasta_channel, 
-         [], 
-         []
-    )
+    // Sort output bam
+    SAMTOOLS_VIEW_SORT(SAMTOOLS_VIEW.out.bam, fasta_channel)
+
 
 
     // OPTIONAL )  Run bowtie2 on spike-in genome
