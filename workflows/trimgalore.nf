@@ -14,6 +14,7 @@ include { TRIMGALORE } from '../modules/nf-core/trimgalore/main'
 include { BOWTIE2_ALIGN as BOWTIE2_TARGET_ALIGN } from '../modules/nf-core/bowtie2/align/main'
 include { BOWTIE2_ALIGN as BOWTIE2_SPIKEIN_ALIGN } from '../modules/nf-core/bowtie2/align/main'
 include { SAMTOOLS_SORT } from '../modules/nf-core/samtools/sort/main'
+include { SAMTOOLS_VIEW } from '../modules/nf-core/samtools/view/main'
 include { SAMTOOLS_FLAGSTAT } from '../modules/nf-core/samtools/flagstat/main'
 include { SAMTOOLS_IDXSTATS } from '../modules/nf-core/samtools/idxstats/main'
 include { PICARD_MARKDUPLICATES   } from '../modules/nf-core/picard/markduplicates/main'
@@ -100,6 +101,19 @@ workflow CleanReads {
     BAM_SORT_STATS_SAMTOOLS( BOWTIE2_TARGET_ALIGN.out.bam, fasta_channel)
 
     // Filter based on q-score
+
+    samtool_ch = BAM_SORT_STATS_SAMTOOLS.out.bam
+    .join(BAM_SORT_STATS_SAMTOOLS.out.bai)  // join on meta
+    .map { meta, bam, bai ->
+        [meta, bam, bai ]   // bai replaces your []
+    }
+
+    SAMTOOLS_VIEW(
+         samtool_ch, 
+         fasta_channel, 
+         [], 
+         []
+    )
 
 
     // OPTIONAL )  Run bowtie2 on spike-in genome
