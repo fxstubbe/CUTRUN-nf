@@ -12,5 +12,4 @@ workflow {
 
 //Calls the cleanRead workflow
     CutRun()
-
 }

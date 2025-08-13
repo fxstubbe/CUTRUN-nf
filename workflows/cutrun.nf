@@ -22,6 +22,10 @@ include { PICARD_ADDORREPLACEREADGROUPS } from '../modules/nf-core/picard/addorr
 include { CUSTOM_GETCHROMSIZES } from '../modules/nf-core/custom/getchromsizes/main'
 include { DEEPTOOLS_BAMCOVERAGE } from '../modules/nf-core/deeptools/bamcoverage/main'
 
+
+// Homemade module
+include{FRAGMENT_LEN} from '../modules/local/Fragment_len/main'
+
 //Import SUBWORFLOWS
 include { BAM_SORT_STATS_SAMTOOLS   } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
 include { BAM_SORT_STATS_SAMTOOLS as SAMTOOLS_VIEW_SORT } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
@@ -132,6 +136,8 @@ workflow CutRun {
         fasta_fai_channel
     )
     DEEPTOOLS_BAMCOVERAGE.out.bigwig.view()
+
+    FRAGMENT_LEN(deeptools_ch)
 
    //  PRESEQ_LCEXTRAP.out.lcextrap.view()
     
