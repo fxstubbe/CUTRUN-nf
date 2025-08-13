@@ -1,7 +1,7 @@
 #!/usr/bin/env nextflow
 
 // import the workflow code from the hello.nf file
-include { CleanReads } from './workflows/trimgalore.nf'
+include { CutRun } from './workflows/CutRun.nf'
 
 
 
@@ -11,6 +11,6 @@ include { CleanReads } from './workflows/trimgalore.nf'
 workflow {
 
 //Calls the cleanRead workflow
-    CleanReads()
+    CutRun()
 
 }
