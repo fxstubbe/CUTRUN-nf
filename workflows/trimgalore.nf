@@ -7,7 +7,7 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-// Imports the TRIMGALORE process
+// Imports the MODULES process
 include { FASTQC } from '../modules/nf-core/fastqc/main'
 include { MULTIQC } from '../modules/nf-core/multiqc/main'
 include { TRIMGALORE } from '../modules/nf-core/trimgalore/main'
@@ -19,10 +19,13 @@ include { SAMTOOLS_FLAGSTAT } from '../modules/nf-core/samtools/flagstat/main'
 include { SAMTOOLS_IDXSTATS } from '../modules/nf-core/samtools/idxstats/main'
 include { PICARD_MARKDUPLICATES   } from '../modules/nf-core/picard/markduplicates/main'
 include { PICARD_ADDORREPLACEREADGROUPS } from '../modules/nf-core/picard/addorreplacereadgroups/main'
+include { CUSTOM_GETCHROMSIZES } from '../modules/nf-core/custom/getchromsizes/main'
+include { DEEPTOOLS_BAMCOVERAGE } from '../modules/nf-core/deeptools/bamcoverage/main'
 
-//Import Suworkflows
+//Import SUBWORFLOWS
 include { BAM_SORT_STATS_SAMTOOLS   } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
 include { BAM_SORT_STATS_SAMTOOLS as SAMTOOLS_VIEW_SORT } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
+//include { PREPARE_PEAKCALLING } from '../subworkflows/local/prepare_peakcalling.nf'
 
 
 /*
@@ -114,7 +117,24 @@ workflow CleanReads {
     SAMTOOLS_VIEW_SORT(SAMTOOLS_VIEW.out.bam, fasta_channel)
 
 
+    deeptools_ch = SAMTOOLS_VIEW_SORT.out.bam
+                                    .join(SAMTOOLS_VIEW_SORT.out.bai)  // join on meta
+                                    .map { meta, bam, bai ->
+                                        tuple (meta, bam, bai)    // bai replaces your []
+                                    }
+    fasta_only_channel_dp = fasta_channel.map { meta, fasta -> fasta }
+    fasta_fai_channel = fasta_only_channel_dp.map { fasta -> file("${fasta}.fai") }
 
+ // BMA COVERAGE
+    DEEPTOOLS_BAMCOVERAGE(
+        deeptools_ch,
+        fasta_only_channel_dp,
+        fasta_fai_channel
+    )
+    DEEPTOOLS_BAMCOVERAGE.out.bigwig.view()
+
+   //  PRESEQ_LCEXTRAP.out.lcextrap.view()
+    
     // OPTIONAL )  Run bowtie2 on spike-in genome
     // ----------------------------------------------------
 
@@ -131,7 +151,28 @@ workflow CleanReads {
         true   // sort_bam
     )
 
+}
+   // ####################################################################################
+    // PREPARE PEAK CALLING 
+    // ####################################################################################
 
+        // Chromosome sizes channel
+       // ch_chrom_sizes = CUSTOM_GETCHROMSIZES(fasta_channel).sizes.map { it[1] }
+
+        // Stage dummy file to be used as an optional input where required
+       // ch_dummy_file = file("$projectDir/assets/dummy_file.txt", checkIfExists: true)
+
+
+        // PREPARE_PEAKCALLING(
+        //     SAMTOOLS_VIEW_SORT.out.bam,
+        //     SAMTOOLS_VIEW_SORT.out.bai,
+        //     ch_chrom_sizes ,
+        //     ch_dummy_file,   
+        //     params.normalisation_mode//,
+        //    // Channel.empty()
+        // )
+    
+    
     // ####################################################################################
     // PICARD : Remove duplicates
     // ####################################################################################
@@ -175,27 +216,3 @@ workflow CleanReads {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-}
-
-    // ####################################################################################
-
-     // ####################################################################################
