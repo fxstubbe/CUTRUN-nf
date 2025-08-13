@@ -22,7 +22,6 @@ include { PICARD_ADDORREPLACEREADGROUPS } from '../modules/nf-core/picard/addorr
 include { CUSTOM_GETCHROMSIZES } from '../modules/nf-core/custom/getchromsizes/main'
 include { DEEPTOOLS_BAMCOVERAGE } from '../modules/nf-core/deeptools/bamcoverage/main'
 
-
 // Homemade module
 include{FRAGMENT_LEN} from '../modules/local/Fragment_len/main'
 
