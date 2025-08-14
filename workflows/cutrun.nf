@@ -21,7 +21,6 @@ include { PICARD_MARKDUPLICATES   } from '../modules/nf-core/picard/markduplicat
 include { PICARD_ADDORREPLACEREADGROUPS } from '../modules/nf-core/picard/addorreplacereadgroups/main'
 include { CUSTOM_GETCHROMSIZES } from '../modules/nf-core/custom/getchromsizes/main'
 include { DEEPTOOLS_BAMCOVERAGE } from '../modules/nf-core/deeptools/bamcoverage/main'
-include{UCSC_BEDGRAPHTOBIGWIG} from '../modules/nf-core/ucsc/bedgraphtobigwig/main.nf'
 include { SEACR_CALLPEAK } from '../modules/nf-core/seacr/callpeak/main'
 
 // Homemade module
@@ -30,8 +29,8 @@ include{FRAGMENT_LEN} from '../modules/local/Fragment_len/main'
 //Import SUBWORFLOWS
 include { BAM_SORT_STATS_SAMTOOLS   } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
 include { BAM_SORT_STATS_SAMTOOLS as SAMTOOLS_VIEW_SORT } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
-include { SAMPLE_CONTROL_PAIRING} from '../subworkflows/local/Emit_pairs_PeakCalling.nf'
-
+include { SAMPLE_CONTROL_PAIRING } from '../subworkflows/local/Emit_pairs_PeakCalling.nf'
+include {VALIDATE_METADATA} from '../subworkflows/local/Validate_metadata.nf'   
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     WORFLOW
@@ -44,6 +43,14 @@ include { SAMPLE_CONTROL_PAIRING} from '../subworkflows/local/Emit_pairs_PeakCal
 
 // Define the workflow
 workflow CutRun {
+
+    // ####################################################################################
+    // Validate metadata from CSV file
+    // ####################################################################################
+    
+    // VALIDATE_METADATA(params.metadata)
+
+
     // ####################################################################################
     // INPUTS :  
     // Takes a .csv file [id, group, replicate, fastq_path_1, fastq_path_2]
@@ -144,6 +151,7 @@ workflow CutRun {
         true,  // save_unaligned
         true   // sort_bam
     )
+   
 
 
     // ####################################################################################
@@ -163,21 +171,24 @@ workflow CutRun {
     fasta_fai_channel = fasta_only_channel_dp.map { fasta -> file("${fasta}.fai") }
 
     // Run DEEPTOOLS_BAMCOVERAGE process
+    // First Call to get bedgraph for SEACR
     DEEPTOOLS_BAMCOVERAGE(
         deeptools_ch,
         fasta_only_channel_dp,
         fasta_fai_channel
     )
+    DEEPTOOLS_BAMCOVERAGE.out.bedgraph.view()
 
-     CUSTOM_GETCHROMSIZES(fasta_channel)
-
+    // Prepare Chromosome size file for UCSC BEDGRAPHTOBIGWIG
+    // CUSTOM_GETCHROMSIZES(fasta_channel)
 
     // Convert bedgraph to bigwig using UCSC BEDGRAPHTOBIGWIG
-    UCSC_BEDGRAPHTOBIGWIG(
+    // UCSC_BEDGRAPHTOBIGWIG(
 
-        DEEPTOOLS_BAMCOVERAGE.out.bedgraph, // Input bedgraph channel
-        CUSTOM_GETCHROMSIZES.out.sizes
-    )
+    //     DEEPTOOLS_BAMCOVERAGE.out.bedgraph, // Input bedgraph channel
+    //     CUSTOM_GETCHROMSIZES.out.sizes.map { meta, sizes -> sizes }
+
+    // )
 
     // ####################################################################################
     // Extract fragment length for QC
@@ -192,6 +203,7 @@ workflow CutRun {
 
     // Emit pairs for peak calling using SEACR
     SAMPLE_CONTROL_PAIRING(DEEPTOOLS_BAMCOVERAGE.out.bedgraph)
+    SAMPLE_CONTROL_PAIRING.out.paired_ch.view() //Sanity checl
 
     // Run SEACR peak calling
     SEACR_CALLPEAK(SAMPLE_CONTROL_PAIRING.out.paired_ch,1)
