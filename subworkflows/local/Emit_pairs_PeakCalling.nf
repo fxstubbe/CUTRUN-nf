@@ -24,8 +24,8 @@ workflow SAMPLE_CONTROL_PAIRING{
                         [
                             meta,
                             bedgraph,
-                            ctrl_data.bedgraph,
-                            meta.threshold ?: 0.01  // default threshold
+                            ctrl_data.bedgraph
+                            //meta.threshold ?: 0.01  // default threshold
                         ]
                     } else {
                         null // control not found, skip

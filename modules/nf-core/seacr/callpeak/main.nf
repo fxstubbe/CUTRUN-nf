@@ -9,8 +9,8 @@ process SEACR_CALLPEAK {
         'community.wave.seqera.io/library/seacr:1.3--3f10984a2399c8c2'}" 
 
     input:
-    tuple val(meta), path(bedgraph), path(ctrlbedgraph)
-     val (threshold )
+    tuple val(meta), path(bedgraph), path(ctrlbedgraph) 
+    val (threshold )
 
 
     output:
