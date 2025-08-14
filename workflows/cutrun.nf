@@ -21,6 +21,8 @@ include { PICARD_MARKDUPLICATES   } from '../modules/nf-core/picard/markduplicat
 include { PICARD_ADDORREPLACEREADGROUPS } from '../modules/nf-core/picard/addorreplacereadgroups/main'
 include { CUSTOM_GETCHROMSIZES } from '../modules/nf-core/custom/getchromsizes/main'
 include { DEEPTOOLS_BAMCOVERAGE } from '../modules/nf-core/deeptools/bamcoverage/main'
+include{UCSC_BEDGRAPHTOBIGWIG} from '../modules/nf-core/ucsc/bedgraphtobigwig/main.nf'
+include { SEACR_CALLPEAK } from '../modules/nf-core/seacr/callpeak/main'
 
 // Homemade module
 include{FRAGMENT_LEN} from '../modules/local/Fragment_len/main'
@@ -28,8 +30,7 @@ include{FRAGMENT_LEN} from '../modules/local/Fragment_len/main'
 //Import SUBWORFLOWS
 include { BAM_SORT_STATS_SAMTOOLS   } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
 include { BAM_SORT_STATS_SAMTOOLS as SAMTOOLS_VIEW_SORT } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
-//include { PREPARE_PEAKCALLING } from '../subworkflows/local/prepare_peakcalling.nf'
-
+include { SAMPLE_CONTROL_PAIRING} from '../subworkflows/local/Emit_pairs_PeakCalling.nf'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -49,14 +50,21 @@ workflow CutRun {
     // Generates a Groovy list [id, [fastq_path_1, fastq_path_2]]
     // ####################################################################################
 
+    // Prepare the input channel from the metadata CSV file
     input_Reads_Channel = Channel
                             .fromPath(params.metadata)
                             .splitCsv(header: true)
                             .map { row ->
-                                def meta = [id: row.id] // Assuming one of the columns is named 'id'
-                                def reads = [file(row.fastq_path_1), file(row.fastq_path_2)] // Assuming columns are named 'fastq_path_1' and 'fastq_path_2'
+                                def meta = [
+                                    id: row.id,
+                                    group: row.group,
+                                    replicate: row.replicate,
+                                    control: row.control
+                                ]
+                                def reads = [file(row.fastq_path_1), file(row.fastq_path_2)]
                                 [meta, reads]
                             }
+                                            
 
     // ####################################################################################
     // TRIM-GALORE : Adapter and Quality trimming
@@ -120,28 +128,9 @@ workflow CutRun {
     SAMTOOLS_VIEW_SORT(SAMTOOLS_VIEW.out.bam, fasta_channel)
 
 
-    deeptools_ch = SAMTOOLS_VIEW_SORT.out.bam
-                                    .join(SAMTOOLS_VIEW_SORT.out.bai)  // join on meta
-                                    .map { meta, bam, bai ->
-                                        tuple (meta, bam, bai)    // bai replaces your []
-                                    }
-    fasta_only_channel_dp = fasta_channel.map { meta, fasta -> fasta }
-    fasta_fai_channel = fasta_only_channel_dp.map { fasta -> file("${fasta}.fai") }
-
- // BMA COVERAGE
-    DEEPTOOLS_BAMCOVERAGE(
-        deeptools_ch,
-        fasta_only_channel_dp,
-        fasta_fai_channel
-    )
-    DEEPTOOLS_BAMCOVERAGE.out.bigwig.view()
-
-    FRAGMENT_LEN(deeptools_ch)
-
-   //  PRESEQ_LCEXTRAP.out.lcextrap.view()
-    
-    // OPTIONAL )  Run bowtie2 on spike-in genome
-    // ----------------------------------------------------
+    // ####################################################################################
+    //(OPTIONAL)  BOWTIE2 : Alignment on spike-in genome for normalization
+    // ####################################################################################
 
     // // Prepare channels for BOWTIE2 process
     spike_fasta_channel = input_Reads_Channel.map { meta, _reads -> [meta, file(params.genomes[params.spike_genome].fasta)] }
@@ -156,27 +145,93 @@ workflow CutRun {
         true   // sort_bam
     )
 
-}
-   // ####################################################################################
-    // PREPARE PEAK CALLING 
+
+    // ####################################################################################
+    // Deeptools: Read Normalization
     // ####################################################################################
 
-        // Chromosome sizes channel
-       // ch_chrom_sizes = CUSTOM_GETCHROMSIZES(fasta_channel).sizes.map { it[1] }
+    // Prepare channels for DEEPTOOLS_BAMCOVERAGE process
+    deeptools_ch = SAMTOOLS_VIEW_SORT.out.bam
+                                    .join(SAMTOOLS_VIEW_SORT.out.bai)  // join on meta
+                                    .map { meta, bam, bai ->
+                                        tuple (meta, bam, bai)    // bai replaces your []
+                                    }
+     // Prepare fasta channel for DEEPTOOLS_BAMCOVERAGE                                
+    fasta_only_channel_dp = fasta_channel.map { meta, fasta -> fasta }
 
-        // Stage dummy file to be used as an optional input where required
-       // ch_dummy_file = file("$projectDir/assets/dummy_file.txt", checkIfExists: true)
+    // Prepare fasta fai channel for DEEPTOOLS_BAMCOVERAGE
+    fasta_fai_channel = fasta_only_channel_dp.map { fasta -> file("${fasta}.fai") }
+
+    // Run DEEPTOOLS_BAMCOVERAGE process
+    DEEPTOOLS_BAMCOVERAGE(
+        deeptools_ch,
+        fasta_only_channel_dp,
+        fasta_fai_channel
+    )
+
+     CUSTOM_GETCHROMSIZES(fasta_channel)
 
 
-        // PREPARE_PEAKCALLING(
-        //     SAMTOOLS_VIEW_SORT.out.bam,
-        //     SAMTOOLS_VIEW_SORT.out.bai,
-        //     ch_chrom_sizes ,
-        //     ch_dummy_file,   
-        //     params.normalisation_mode//,
-        //    // Channel.empty()
-        // )
-    
+    // Convert bedgraph to bigwig using UCSC BEDGRAPHTOBIGWIG
+    UCSC_BEDGRAPHTOBIGWIG(
+
+        DEEPTOOLS_BAMCOVERAGE.out.bedgraph, // Input bedgraph channel
+        CUSTOM_GETCHROMSIZES.out.sizes
+    )
+
+    // ####################################################################################
+    // Extract fragment length for QC
+    // ####################################################################################
+
+    // Get fragment length
+    FRAGMENT_LEN(deeptools_ch)
+
+    // ####################################################################################
+    // PEAK CALLING
+    // ####################################################################################
+
+    // Emit pairs for peak calling using SEACR
+    SAMPLE_CONTROL_PAIRING(DEEPTOOLS_BAMCOVERAGE.out.bedgraph)
+
+    // Run SEACR peak calling
+    SEACR_CALLPEAK(SAMPLE_CONTROL_PAIRING.out.paired_ch,1)
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//
+// Bits of code that were not used in the final workflow but might be useful for future reference or debugging
+//
+
+
+
+
+
+    // input_Reads_Channel = Channel
+    //                         .fromPath(params.metadata)
+    //                         .splitCsv(header: true)
+    //                         .map { row ->
+    //                             def meta = [id: row.id] // Assuming one of the columns is named 'id'
+    //                             def reads = [file(row.fastq_path_1), file(row.fastq_path_2)] // Assuming columns are named 'fastq_path_1' and 'fastq_path_2'
+    //                             [meta, reads]
+    //                         }
+
     
     // ####################################################################################
     // PICARD : Remove duplicates

@@ -4,7 +4,7 @@ process UCSC_BEDGRAPHTOBIGWIG {
 
     // WARN: Version information not provided by tool on CLI. Please update version string below when bumping container versions.
     conda "${moduleDir}/environment.yml"
-    container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
+ container "${ (workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container) ?
         'https://depot.galaxyproject.org/singularity/ucsc-bedgraphtobigwig:469--h9b8f530_0' :
         'community.wave.seqera.io/library/ucsc-bedgraphtobigwig:469--f66c00635e28f216' }"
 
