@@ -15,9 +15,8 @@
 
 **nf-core/cutrun** is a best-practice bioinformatic analysis pipeline for CUT&RUN data.
 
-<!-- TODO nf-core:
 This pipeline uses Nextflow, a portable and reproducible workflow tool that simplifies deployment with containerization and package management. Each process runs in its own container, ensuring easy maintenance and dependency updates, and leverages nf-core/modules where possible.
--->
+
 
 <!-- TODO nf-core: Include a figure that guides the user through the major workflow steps. Many nf-core
      workflows use the "tube map" design for that. See https://nf-co.re/docs/guidelines/graphic_design/workflow_diagrams#examples for examples.   -->
