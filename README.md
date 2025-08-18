@@ -32,8 +32,7 @@ This pipeline uses Nextflow, a portable and reproducible workflow tool that simp
 > [!NOTE]
 > If you are new to Nextflow and nf-core, please refer to [this page](https://nf-co.re/docs/usage/installation) on how to set-up Nextflow. Make sure to [test your setup](https://nf-co.re/docs/usage/introduction#how-to-run-a-pipeline) with `-profile test` before running the workflow on actual data.
 
-
-First, prepare a samplesheet with your input data that looks as follows:
+First, prepare a samplesheet where each row represents a sequenced library. It should look as follow:
 
 `samplesheet.csv`:
 
@@ -42,16 +41,12 @@ id,group,replicate,fastq_path_1,fastq_path_2,control
 N2_K27_1,K27,1,Path to read Fwd,Path the read Rev,N2_neg
 ```
 
-Each row represents a fastq file (single-end) or a pair of fastq files (paired end).
-
--->
-
 Now, you can run the pipeline using:
 
 
 ```bash
-nextflow run nf-core/cutrun \
-   -profile <docker/singularity/.../institute> \
+nextflow run cutrun-nf.nf \
+   -profile <laptop/baobab/.../custon> \
    --input samplesheet.csv \
    --outdir <OUTDIR>
 ```
@@ -63,9 +58,7 @@ nextflow run nf-core/cutrun \
 
 nf-core/cutrun was originally written by François-Xavier Stubbe.
 
-We thank the following people for their extensive assistance in the development of this pipeline:
 
-<!-- TODO nf-core: If applicable, make list of people who have also contributed -->
 
 ## Contributions and Support
 
