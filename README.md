@@ -32,8 +32,6 @@ This pipeline uses Nextflow, a portable and reproducible workflow tool that simp
 > [!NOTE]
 > If you are new to Nextflow and nf-core, please refer to [this page](https://nf-co.re/docs/usage/installation) on how to set-up Nextflow. Make sure to [test your setup](https://nf-co.re/docs/usage/introduction#how-to-run-a-pipeline) with `-profile test` before running the workflow on actual data.
 
-<!-- TODO nf-core: Describe the minimum required steps to execute the pipeline, e.g. how to prepare samplesheets.
-     Explain what rows and columns represent. For instance (please edit as appropriate):
 
 First, prepare a samplesheet with your input data that looks as follows:
 
@@ -41,7 +39,7 @@ First, prepare a samplesheet with your input data that looks as follows:
 
 ```csv
 id,group,replicate,fastq_path_1,fastq_path_2,control
-N2_K27_1,K27,1,Path to read Fwd,/Path the read Rev,N2_neg
+N2_K27_1,K27,1,Path to read Fwd,Path the read Rev,N2_neg
 ```
 
 Each row represents a fastq file (single-end) or a pair of fastq files (paired end).
@@ -50,7 +48,6 @@ Each row represents a fastq file (single-end) or a pair of fastq files (paired e
 
 Now, you can run the pipeline using:
 
-<!-- TODO nf-core: update the following command to include all required parameters for a minimal example -->
 
 ```bash
 nextflow run nf-core/cutrun \
