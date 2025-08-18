@@ -13,12 +13,10 @@
 
 ## Introduction
 
-**nf-core/cutrun** is a bioinformatics pipeline that ...
+**nf-core/cutrun** is a best-practice bioinformatic analysis pipeline for CUT&RUN data.
 
 <!-- TODO nf-core:
-   Complete this sentence with a 2-3 sentence summary of what types of data the pipeline ingests, a brief overview of the
-   major pipeline sections and the types of output it produces. You're giving an overview to someone new
-   to nf-core here, in 15-20 seconds. For an example, see https://github.com/nf-core/rnaseq/blob/master/README.md#introduction
+This pipeline uses Nextflow, a portable and reproducible workflow tool that simplifies deployment with containerization and package management. Each process runs in its own container, ensuring easy maintenance and dependency updates, and leverages nf-core/modules where possible.
 -->
 
 <!-- TODO nf-core: Include a figure that guides the user through the major workflow steps. Many nf-core
@@ -38,8 +36,8 @@ First, prepare a samplesheet with your input data that looks as follows:
 `samplesheet.csv`:
 
 ```csv
-sample,fastq_1,fastq_2
-CONTROL_REP1,AEG588A1_S1_L002_R1_001.fastq.gz,AEG588A1_S1_L002_R2_001.fastq.gz
+id,group,replicate,fastq_path_1,fastq_path_2,control
+N2_K27_1,K27,1,Path to read Fwd,/Path the read Rev,N2_neg
 ```
 
 Each row represents a fastq file (single-end) or a pair of fastq files (paired end).
