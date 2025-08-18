@@ -207,7 +207,7 @@ workflow CutRun {
     SAMPLE_CONTROL_PAIRING.out.paired_ch.view() //Sanity check
 
     // Run SEACR peak calling
-    SEACR_CALLPEAK(SAMPLE_CONTROL_PAIRING.out.paired_ch, 1)
+    //SEACR_CALLPEAK(SAMPLE_CONTROL_PAIRING.out.paired_ch, 1)
 
 }
 
