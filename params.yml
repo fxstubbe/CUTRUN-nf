@@ -5,7 +5,7 @@
 #### ----------------------------------------####
 
 #Input CSV with reads
-metadata: '/home/users/s/stubbe/metadata.csv'
+metadata: '/home/users/s/stubbe/CR_meta.csv'
 
 #Output directory
 outdir: '/home/users/s/stubbe/CR_output/'
