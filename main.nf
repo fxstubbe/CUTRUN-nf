@@ -1,7 +1,7 @@
 #!/usr/bin/env nextflow
 
 // import the workflow code from the hello.nf file
-include { CutRun } from './workflows/CutRun.nf'
+include { CutRun } from './workflows/cutrun.nf'
 
 
 
