@@ -16,8 +16,6 @@ workflow SPLIT_WINDOWS {
     BEDTOOLS_COVERAGE(bed_bam_ch, fasta_fai_channel)
     }
 
-
-
     }
     
 
