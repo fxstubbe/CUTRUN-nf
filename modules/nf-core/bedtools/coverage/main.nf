@@ -4,8 +4,8 @@ process BEDTOOLS_COVERAGE {
 
     conda "${moduleDir}/environment.yml"
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/bedtools:2.31.1--hf5e1c6e_0' :
-        'biocontainers/bedtools:2.31.1--hf5e1c6e_0' }"
+        'oras://community.wave.seqera.io/library/bedtools:2.31.1--a120a7e98287539a' :
+        'community.wave.seqera.io/library/bedtools:2.31.1--7c4ce4cb07c09ee4' }"
 
     input:
     tuple val(meta), path(input_A), path(input_B)
