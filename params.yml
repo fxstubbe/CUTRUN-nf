@@ -12,7 +12,8 @@ outdir: '/home/users/s/stubbe/CR_output/'
 
 #Genome file
 igenomes_base: '/home/users/s/stubbe/resources/igenomes'
-
+genome: 'WBcel235' 
+spike_genome: 'EB1'
 
 #Normalisation
 normalisation_to_spikein: true
