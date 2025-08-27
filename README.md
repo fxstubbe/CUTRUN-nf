@@ -19,11 +19,12 @@ This pipeline uses Nextflow, a portable and reproducible workflow tool that simp
 3. Alignment to both target and spike-in genomes (Bowtie 2)
 4. Filter on quality, sort and index alignments (samtools)
 5. (Optional) Duplicate read marking (picard)
-6. Create bedGraph|BigWig files (bedtools
-7. Peak calling (SEACR, MACS2) -- IN PROGRESS
-8. Consensus peak merging and reporting (bedtools) -- IN PROGRESS
-9. Fragment-based quality control (deepTools)
-10. Peak-based quality control (bedtools, custom python) -- IN PROGRESS
+6. Create bedGraph|BigWig files (bedtools)
+8. Genome tiling for HDBScan
+8. Peak calling (SEACR, MACS2) -- IN PROGRESS
+9. Consensus peak merging and reporting (bedtools) -- IN PROGRESS
+10. Fragment-based quality control (deepTools)
+11. Peak-based quality control (bedtools, custom python) -- IN PROGRESS
 
 
 

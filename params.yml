@@ -1,1 +1,23 @@
-metadata: /Users/stubbe/Desktop/metadata.csv'
+#### ----------------------------------------####
+###
+## MANDATORY PARAMETERS
+###
+#### ----------------------------------------####
+
+#Input CSV with reads
+metadata: '/home/users/s/stubbe/metadata.csv'
+
+#Output directory
+outdir: '/home/users/s/stubbe/CR_output/'
+
+#Genome file
+igenomes_base: '/home/users/s/stubbe/resources/igenomes'
+
+
+#Normalisation
+normalisation_to_spikein: true
+normalisation_mode: 'CPM'
+
+#Make genomic tiles
+split: true
+splitwindows: '/home/users/s/stubbe/resources/10kb_WBCel235.bed'
