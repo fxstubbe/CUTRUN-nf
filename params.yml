@@ -21,4 +21,5 @@ normalisation_mode: 'CPM'
 
 #Make genomic tiles
 split: true
+splitsize: '5kb'
 splitwindows: '/home/users/s/stubbe/resources/Genomic_windows/5kb_WBCel235.bed'
