@@ -8,7 +8,7 @@
 metadata: '/home/users/s/stubbe/CR_meta.csv'
 
 #Output directory
-outdir: '/home/users/s/stubbe/CR_output/'
+outdir: '/home/users/s/stubbe/CR_2_output/'
 
 #Genome file
 igenomes_base: '/home/users/s/stubbe/resources/igenomes'
@@ -21,4 +21,4 @@ normalisation_mode: 'CPM'
 
 #Make genomic tiles
 split: true
-splitwindows: '/home/users/s/stubbe/resources/10kb_WBCel235.bed'
+splitwindows: '/home/users/s/stubbe/resources/Genomic_windows/'
