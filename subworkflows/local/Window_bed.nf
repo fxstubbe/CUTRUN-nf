@@ -16,7 +16,7 @@ workflow SPLIT_WINDOWS {
 
 
     //Compute the covarage file per window with bedtools
-    BEDTOOLS_COVERAGE(bam_bed_ready_ch, fasta_fai_channel)
+    BEDTOOLS_COVERAGE(bed_bam_ch, fasta_fai_channel)
     }
 
     // if(params.split){
