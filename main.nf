@@ -1,15 +1,13 @@
 #!/usr/bin/env nextflow
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    fxstubbe/CUTRUN-nf
+    https://github.com/fxstubbe/CUTRUN-nf
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
 
-// import the workflow code from the hello.nf file
 include { CutRun } from './workflows/cutrun.nf'
 
-
-
-// declare input parameter
-//params.metadata = '/Users/stubbe/Desktop/metadata.csv'
-
 workflow {
-
-//Calls the cleanRead workflow
     CutRun()
 }

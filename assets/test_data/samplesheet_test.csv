@@ -1,0 +1,5 @@
+id,group,replicate,control,fastq_path_1,fastq_path_2
+WT_K27me3_1,WT,1,WT_noAb_1,WT_K27me3_1_R1.fastq.gz,WT_K27me3_1_R2.fastq.gz
+WT_noAb_1,WT,1,,WT_noAb_1_R1.fastq.gz,WT_noAb_1_R2.fastq.gz
+MUT_K27me3_1,MUT,1,MUT_noAb_1,MUT_K27me3_1_R1.fastq.gz,MUT_K27me3_1_R2.fastq.gz
+MUT_noAb_1,MUT,1,,MUT_noAb_1_R1.fastq.gz,MUT_noAb_1_R2.fastq.gz

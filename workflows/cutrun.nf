@@ -1,276 +1,277 @@
-
-
-
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    IMPORT MODULES / SUBWORKFLOWS / FUNCTIONS
+    CUTRUN-nf main workflow
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    TrimGalore -> FastQC -> Bowtie2 (target) -> sort -> MAPQ/proper-pair/mito filter
+    Bowtie2 (spike-in, on the pairs that did not align to the target)
+    -> spike-in scale factor -> bedGraph + bigWigs -> multi-resolution windows
+    -> SEACR peaks -> fragment length -> MultiQC
+----------------------------------------------------------------------------------------
 */
 
-// Imports the MODULES process
-include { FASTQC } from '../modules/nf-core/fastqc/main'
-include { MULTIQC } from '../modules/nf-core/multiqc/main'
-include { TRIMGALORE } from '../modules/nf-core/trimgalore/main'
-include { BOWTIE2_ALIGN as BOWTIE2_TARGET_ALIGN } from '../modules/nf-core/bowtie2/align/main'
+include { TRIMGALORE                             } from '../modules/nf-core/trimgalore/main'
+include { FASTQC                                 } from '../modules/nf-core/fastqc/main'
+include { MULTIQC                                } from '../modules/nf-core/multiqc/main'
+include { BOWTIE2_BUILD as BOWTIE2_BUILD_TARGET  } from '../modules/nf-core/bowtie2/build/main'
+include { BOWTIE2_BUILD as BOWTIE2_BUILD_SPIKEIN } from '../modules/nf-core/bowtie2/build/main'
+include { BOWTIE2_ALIGN as BOWTIE2_TARGET_ALIGN  } from '../modules/nf-core/bowtie2/align/main'
 include { BOWTIE2_ALIGN as BOWTIE2_SPIKEIN_ALIGN } from '../modules/nf-core/bowtie2/align/main'
-include { SAMTOOLS_SORT } from '../modules/nf-core/samtools/sort/main'
-include { SAMTOOLS_VIEW } from '../modules/nf-core/samtools/view/main'
-include { SAMTOOLS_FLAGSTAT } from '../modules/nf-core/samtools/flagstat/main'
-include { SAMTOOLS_IDXSTATS } from '../modules/nf-core/samtools/idxstats/main'
-include { PICARD_MARKDUPLICATES   } from '../modules/nf-core/picard/markduplicates/main'
-include { PICARD_ADDORREPLACEREADGROUPS } from '../modules/nf-core/picard/addorreplacereadgroups/main'
-include { CUSTOM_GETCHROMSIZES } from '../modules/nf-core/custom/getchromsizes/main'
-include { DEEPTOOLS_BAMCOVERAGE } from '../modules/nf-core/deeptools/bamcoverage/main'
-include { SEACR_CALLPEAK } from '../modules/nf-core/seacr/callpeak/main'
+include { SAMTOOLS_VIEW                          } from '../modules/nf-core/samtools/view/main'
+include { CUSTOM_GETCHROMSIZES                   } from '../modules/nf-core/custom/getchromsizes/main'
+include { SEACR_CALLPEAK                         } from '../modules/nf-core/seacr/callpeak/main'
+include { FRAGMENT_LEN                           } from '../modules/local/Fragment_len/main'
 
-// Homemade module
-include{FRAGMENT_LEN} from '../modules/local/Fragment_len/main'
-
-//Import SUBWORFLOWS
-include { BAM_SORT_STATS_SAMTOOLS   } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
-include { BAM_SORT_STATS_SAMTOOLS as SAMTOOLS_VIEW_SORT } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
-include { SAMPLE_CONTROL_PAIRING } from '../subworkflows/local/Emit_pairs_PeakCalling.nf'
-include { VALIDATE_METADATA} from '../subworkflows/local/Validate_metadata.nf'   
-include { BAM_NORM } from '../subworkflows/local/Bam_Norm.nf'
-include { SPLIT_WINDOWS } from '../subworkflows/local/Window_bed.nf'
-
+include { BAM_SORT_STATS_SAMTOOLS                         } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
+include { BAM_SORT_STATS_SAMTOOLS as SAMTOOLS_VIEW_SORT   } from '../subworkflows/nf-core/bam_sort_stats_samtools/main.nf'
+include { BAM_NORM                                        } from '../subworkflows/local/Bam_Norm.nf'
+include { SPLIT_WINDOWS                                   } from '../subworkflows/local/Window_bed.nf'
+include { SAMPLE_CONTROL_PAIRING                          } from '../subworkflows/local/Emit_pairs_PeakCalling.nf'
 
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    WORFLOW
+    HELPERS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
-//
-//
 
+def genomeEntry(name) {
+    return (params.genomes && name && params.genomes.containsKey(name)) ? params.genomes[name] : [:]
+}
 
+// Absolute or remote (s3://, https://, ...) paths are used as is; relative paths are
+// resolved against the directory that holds the samplesheet.
+def resolveFastq(sheet, String p) {
+    def remote = p =~ /^[A-Za-z][A-Za-z0-9+.-]*:\/\//
+    return (p.startsWith('/') || remote.find()) ? file(p) : sheet.parent.resolve(p)
+}
 
-// Define the workflow
-workflow CutRun {
+/*
+ * Read and validate the samplesheet: id,group,replicate,control,fastq_path_1,fastq_path_2
+ *   - ids unique and file-name safe; every non-empty control is an existing id
+ *   - FASTQ paths absolute, remote (s3://, https://) or relative to the samplesheet
+ *   - every FASTQ exists
+ * All problems are reported together.
+ */
+def readSamplesheet(sheetPath) {
+    def sheet    = file(sheetPath, checkIfExists: true)
+    def rows     = sheet.splitCsv(header: true, strip: true)
+    def required = ['id', 'group', 'replicate', 'fastq_path_1', 'fastq_path_2']
+    def problems = []
 
-    // ####################################################################################
-    // Validate metadata from CSV file
-    // ####################################################################################
-    
-    // VALIDATE_METADATA(params.metadata)
+    if (!rows) {
+        error "Samplesheet ${sheet} has no rows"
+    }
+    def missingCols = required.findAll { col -> !rows[0].containsKey(col) }
+    if (missingCols) {
+        error "Samplesheet ${sheet} is missing column(s): ${missingCols.join(', ')}"
+    }
 
+    def ids = rows.collect { row -> row.id }
+    ids.countBy { it }.findAll { _id, n -> n > 1 }.each { id, n -> problems << "id '${id}' appears ${n} times" }
+    ids.findAll { id -> !(id ==~ /[A-Za-z0-9._-]+/) }.each { id -> problems << "id '${id}' may only contain letters, digits, '.', '_' and '-'" }
 
-    // ####################################################################################
-    // INPUTS :  
-    // Takes a .csv file [id, group, replicate, fastq_path_1, fastq_path_2]
-    // Generates a Groovy list [id, [fastq_path_1, fastq_path_2]]
-    // ####################################################################################
+    def controlIds = rows.collect { row -> row.control ?: '' }.findAll { c -> c }.toSet()
+    controlIds.findAll { c -> !(c in ids) }.each { c -> problems << "control '${c}' is not an id in the samplesheet" }
 
-    // Prepare the input channel from the metadata CSV file
-    input_Reads_Channel = Channel
-                            .fromPath(params.metadata)
-                            .splitCsv(header: true)
-                            .map { row ->
-                                def meta = [
-                                    id: row.id,
-                                    group: row.group,
-                                    replicate: row.replicate,
-                                    control: row.control
-                                ]
-                                def reads = [file(row.fastq_path_1), file(row.fastq_path_2)]
-                                [meta, reads]
-                            }
-                                            
+    def samples = rows.collect { row ->
+        def reads = ['fastq_path_1', 'fastq_path_2'].collect { col ->
+            def p = row[col]
+            if (!p) {
+                problems << "${row.id}: ${col} is empty"
+                return null
+            }
+            def f = resolveFastq(sheet, p)
+            if (!f.exists()) {
+                problems << "${row.id}: ${col} not found -> ${f}"
+            }
+            f
+        }
+        def meta = [
+            id        : row.id,
+            group     : row.group,
+            replicate : row.replicate,
+            control   : row.control ?: '',
+            is_control: row.id in controlIds,
+            single_end: false
+        ]
+        [ meta, reads ]
+    }
 
-    // ####################################################################################
-    // TRIM-GALORE : Adapter and Quality trimming
-    // ####################################################################################
-
-    TRIMGALORE(input_Reads_Channel) // for debug TRIMGALORE.out.reads.view()
-
-    // ####################################################################################
-    // QC Report
-    // ####################################################################################
-
-    // Prepare catching Channel for merged report
-    ch_multiqc_files = Channel.empty()
-
-    //Run FASTQC
-    FASTQC(TRIMGALORE.out.reads)
-
-    //Collect All FASRQC reports
-    ch_multiqc_files = ch_multiqc_files.mix(FASTQC.out.zip.collect { _sample_id, zip_file -> zip_file }) //Get path to ZIP file
-    
-    //Get the configuration file for MULTIQC and make a report
-    ch_multiqc_config = Channel.fromPath("./assets/multiqc_config.yml", checkIfExists: true) //Config file for fastqc (OPTIONAL)
-    MULTIQC (ch_multiqc_files.collect(),ch_multiqc_config.toList(),[],[],[],[])
-
-    // ####################################################################################
-    // BOWTIE2 : Alignment 
-    // ####################################################################################
-
-    // 1) Run bowtie2 on target genome
-    // ----------------------------------------------------
-
-    // Prepare channels for BOWTIE2 process
-    fasta_channel = input_Reads_Channel.map { meta, _reads -> [meta, file(params.genomes[params.genome].fasta)] }
-    index_channel = input_Reads_Channel.map { meta, _reads -> [meta, file(params.genomes[params.genome].bowtie2)] } 
-
-
-    // Run BOWTIE2_TARGET_ALIGN process
-    BOWTIE2_TARGET_ALIGN (
-        TRIMGALORE.out.reads, // Paths of trimmed reads generated by trim-galore
-        index_channel, // Channel poiting to the bowtie2 index
-        fasta_channel, // Channel poiting to the FASTA file 
-        true,  // save_unaligned; can be set to save_align when figure out conditional mapping
-        false   // sort_basort BAM, False because already included in BAM_SORT_STATS_SAMTOOLS subworkflow
-    )
-
-    // Subworkflow to sort and provide statistics on alignment
-    BAM_SORT_STATS_SAMTOOLS( BOWTIE2_TARGET_ALIGN.out.bam, fasta_channel)
-
-    // Filter based on q-score
-    samtool_ch = BAM_SORT_STATS_SAMTOOLS.out.bam
-                                        .join(BAM_SORT_STATS_SAMTOOLS.out.bai)  // join on meta
-                                        .map { meta, bam, bai ->
-                                            [meta, bam, bai ]   // bai replaces your []
-                                        }
-    SAMTOOLS_VIEW(samtool_ch, fasta_channel, [], [])
-
-    // Sort output bam
-    SAMTOOLS_VIEW_SORT(SAMTOOLS_VIEW.out.bam, fasta_channel)
-
-
-    // ####################################################################################
-    // BOWTIE2 : Alignment on spike-in genome for normalization
-    // ####################################################################################
-
-    // // Prepare channels for BOWTIE2 process
-    spike_fasta_channel = input_Reads_Channel.map { meta, _reads -> [meta, file(params.genomes[params.spike_genome].fasta)] }
-    spike_index_channel = input_Reads_Channel.map { meta, _reads -> [meta, file(params.genomes[params.spike_genome].bowtie2)] } 
-
-    // Run BOWTIE2_TARGET_ALIGN process
-    BOWTIE2_SPIKEIN_ALIGN (
-        BOWTIE2_TARGET_ALIGN.out.fastq, // Paths of trimmed reads generated by trim-galore
-        spike_index_channel, // Channel poiting to the bowtie2 index
-        spike_fasta_channel, // Channel poiting to the FASTA file 
-        true,  // save_unaligned
-        true   // sort_bam
-    )
-   
-    // ####################################################################################
-    // Deeptools: Read Normalization 
-    // ####################################################################################
-    
-    // Prepare channels for DEEPTOOLS_BAMCOVERAGE process
-    deeptools_ch = SAMTOOLS_VIEW_SORT.out.bam
-                                    .join(SAMTOOLS_VIEW_SORT.out.bai)  // join on meta
-                                    .map { meta, bam, bai ->
-                                        tuple (meta, bam, bai)    // bai replaces your []
-                                    }
-     // Prepare fasta channel for DEEPTOOLS_BAMCOVERAGE                                
-    fasta_only_channel_dp = fasta_channel.map { meta, fasta -> fasta }
-
-    // Prepare fasta fai channel for DEEPTOOLS_BAMCOVERAGE
-    fasta_fai_channel = fasta_only_channel_dp.map { fasta -> file("${fasta}.fai") }
-    
-     // Prepare Chromosome size file for UCSC BEDGRAPHTOBIGWIG
-    CUSTOM_GETCHROMSIZES(fasta_channel)
-    
-    // SUbworkflow for read normalization
-    BAM_NORM (
-        deeptools_ch,
-        fasta_only_channel_dp,
-        fasta_fai_channel,
-        BOWTIE2_SPIKEIN_ALIGN.out.log,
-        CUSTOM_GETCHROMSIZES.out.sizes  
-    )      
-
-    // ####################################################################################
-    // BEDTOOLS: Tile the Genome into bins of defined size
-    // ####################################################################################
-
-    SPLIT_WINDOWS(deeptools_ch,fasta_fai_channel)
-
-    // ####################################################################################
-    // Extract fragment length for QC
-    // ####################################################################################
-
-    // Get fragment length
-    FRAGMENT_LEN(deeptools_ch)
-
-    // ####################################################################################
-    // PEAK CALLING
-    // ####################################################################################
-
-    // Emit pairs for peak calling using SEACR
-    //SAMPLE_CONTROL_PAIRING(DEEPTOOLS_BAMCOVERAGE.out.bedgraph)
-    
-    //SAMPLE_CONTROL_PAIRING.out.paired_ch.view() //Sanity check
-
-    // Run SEACR peak calling
-    //SEACR_CALLPEAK(SAMPLE_CONTROL_PAIRING.out.paired_ch, 1)
-
+    if (problems) {
+        error "Samplesheet ${sheet} failed validation:\n  - " + problems.join('\n  - ')
+    }
+    log.info "Samplesheet OK: ${samples.size()} libraries, ${controlIds.size()} used as control"
+    return samples
 }
 
 
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    WORKFLOW
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
 
+workflow CutRun {
 
+    main:
 
+    // ---- Parameters that must be set
+    if (!params.metadata) {
+        error "Please provide a samplesheet with --metadata (or in params.yml)"
+    }
+    if (!params.outdir) {
+        error "Please provide an output directory with --outdir (or in params.yml)"
+    }
 
+    // ---- References: explicit FASTA/index first, iGenomes entry otherwise
+    def target       = genomeEntry(params.genome)
+    def spike        = genomeEntry(params.spike_genome)
+    def target_fasta = params.fasta ?: target.fasta
+    def spike_fasta  = params.spike_fasta ?: spike.fasta
+    def target_index = params.bowtie2_index ?: (params.fasta ? null : target.bowtie2)
+    def spike_index  = params.spike_bowtie2_index ?: (params.spike_fasta ? null : spike.bowtie2)
+    if (!target_fasta) {
+        error "No FASTA for target genome '${params.genome}': set --fasta or a known --genome"
+    }
+    if (!spike_fasta) {
+        error "No FASTA for spike-in genome '${params.spike_genome}': set --spike_fasta or a known --spike_genome"
+    }
+    def mito           = params.mito_name ?: target.mito_name
+    def exclude_chroms = (params.remove_mitochondrial_reads.toString().toBoolean() && mito) ? mito.toString() : ''
 
+    ch_fasta       = Channel.value([ [id: params.genome],       file(target_fasta, checkIfExists: true) ])
+    ch_spike_fasta = Channel.value([ [id: params.spike_genome], file(spike_fasta,  checkIfExists: true) ])
 
+    ch_index = Channel.empty()
+    if (target_index) {
+        ch_index = Channel.value([ [id: params.genome], file(target_index, checkIfExists: true) ])
+    } else {
+        BOWTIE2_BUILD_TARGET(ch_fasta)
+        ch_index = BOWTIE2_BUILD_TARGET.out.index
+    }
+    ch_spike_index = Channel.empty()
+    if (spike_index) {
+        ch_spike_index = Channel.value([ [id: params.spike_genome], file(spike_index, checkIfExists: true) ])
+    } else {
+        BOWTIE2_BUILD_SPIKEIN(ch_spike_fasta)
+        ch_spike_index = BOWTIE2_BUILD_SPIKEIN.out.index
+    }
 
+    // FASTA index and chromosome sizes, computed once
+    CUSTOM_GETCHROMSIZES(ch_fasta)
+    ch_fai        = CUSTOM_GETCHROMSIZES.out.fai.map   { _meta, fai   -> fai   }
+    ch_sizes      = CUSTOM_GETCHROMSIZES.out.sizes.map { _meta, sizes -> sizes }
+    ch_fasta_path = ch_fasta.map { _meta, fasta -> fasta }
 
+    // ---- Samplesheet
+    ch_metadata = Channel.value(file(params.metadata, checkIfExists: true))
+    ch_reads    = Channel.fromList(readSamplesheet(params.metadata))
 
-
-
-
-
-//-------------------------------------------------------------------------------------------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------------------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------------------------------------------------------------------------------------------
-//
-// Bits of code that were not used in the final workflow but might be useful for future reference or debugging
-//
-
-                     
- 
     // ####################################################################################
-    // PICARD : Remove duplicates
+    // Trimming and read QC
     // ####################################################################################
 
-    //Prepare fai fasta channel for picard
-    // fasta_fai_channel = fasta_channel.map { _meta, fasta -> [[id : params.genome], file("${fasta}.fai")] }
+    TRIMGALORE(ch_reads)
+    FASTQC(TRIMGALORE.out.reads)
 
-    
-    // PICARD_ADDORREPLACEREADGROUPS(        
-    //     SAMTOOLS_SORT.out.bam, //BAM file to feed picard
-    //     fasta_channel, // Reference genome fasta
-    //     fasta_fai_channel)
+    // ####################################################################################
+    // Alignment to the target genome, sort, filter
+    // ####################################################################################
 
-    // PICARD_MARKDUPLICATES (
-    //     PICARD_ADDORREPLACEREADGROUPS.out.bam, //BAM file to feed picard
-    //     fasta_channel, // Reference genome fasta
-    //     fasta_fai_channel
-    // )
-// BOWTIE2_TARGET_ALIGN.out.
+    BOWTIE2_TARGET_ALIGN(
+        TRIMGALORE.out.reads,
+        ch_index,
+        ch_fasta,
+        true,   // save_unaligned: these pairs feed the spike-in alignment
+        false   // sort_bam: sorted below
+    )
 
-//  ch_markduplicates_metrics = Channel.empty()
-//     if (params.run_mark_dups) {
-//         PICARD_MARKDUPLICATES (
-//             BAM_SORT_STATS_SAMTOOLS.out.bam, //BAM file to feed picard
-//             BAM_SORT_STATS_SAMTOOLS.out.bai,
-//             true,
-//             PREPARE_GENOME.out.fasta.collect(),
-//             PREPARE_GENOME.out.fasta_index.collect()
-//         )
+    BAM_SORT_STATS_SAMTOOLS(BOWTIE2_TARGET_ALIGN.out.bam, ch_fasta)
 
-//         ch_samtools_bam           = MARK_DUPLICATES_PICARD.out.bam
-//         ch_samtools_bai           = MARK_DUPLICATES_PICARD.out.bai
-//         ch_samtools_stats         = MARK_DUPLICATES_PICARD.out.stats
-//         ch_samtools_flagstat      = MARK_DUPLICATES_PICARD.out.flagstat
-//         ch_samtools_idxstats      = MARK_DUPLICATES_PICARD.out.idxstats
-//         ch_markduplicates_metrics = MARK_DUPLICATES_PICARD.out.metrics
-//         ch_software_versions      = ch_software_versions.mix(MARK_DUPLICATES_PICARD.out.versions)
-//     }
+    SAMTOOLS_VIEW(
+        BAM_SORT_STATS_SAMTOOLS.out.bam.join(BAM_SORT_STATS_SAMTOOLS.out.bai),
+        ch_fasta,
+        [],
+        []
+    )
 
+    SAMTOOLS_VIEW_SORT(SAMTOOLS_VIEW.out.bam, ch_fasta)
 
+    ch_bam_bai = SAMTOOLS_VIEW_SORT.out.bam.join(SAMTOOLS_VIEW_SORT.out.bai)   // [ meta, bam, bai ]
 
+    // ####################################################################################
+    // Spike-in alignment on the pairs that did not align to the target genome
+    // ####################################################################################
 
+    BOWTIE2_SPIKEIN_ALIGN(
+        BOWTIE2_TARGET_ALIGN.out.fastq,
+        ch_spike_index,
+        ch_spike_fasta,
+        false,  // save_unaligned
+        true    // sort_bam
+    )
+
+    // ####################################################################################
+    // Scale factors, bedGraph, bigWig
+    // ####################################################################################
+
+    BAM_NORM(
+        ch_bam_bai,
+        ch_fasta_path,
+        ch_fai,
+        BOWTIE2_SPIKEIN_ALIGN.out.log,
+        ch_sizes
+    )
+
+    // ####################################################################################
+    // Genomic windows at every size in params.window_sizes
+    // ####################################################################################
+
+    if (params.split.toString().toBoolean()) {
+        SPLIT_WINDOWS(
+            ch_bam_bai,
+            ch_fai,
+            BOWTIE2_SPIKEIN_ALIGN.out.log,
+            ch_metadata,
+            exclude_chroms
+        )
+    }
+
+    // ####################################################################################
+    // Fragment length distribution
+    // ####################################################################################
+
+    if (params.fragment_len_reporting.toString().toBoolean()) {
+        FRAGMENT_LEN(ch_bam_bai)
+    }
+
+    // ####################################################################################
+    // Peak calling: SEACR on the (spike-in scaled) bedGraphs, against the declared control
+    // ####################################################################################
+
+    if (params.run_peak_calling.toString().toBoolean()) {
+        SAMPLE_CONTROL_PAIRING(BAM_NORM.out.bedgraph)
+        SEACR_CALLPEAK(SAMPLE_CONTROL_PAIRING.out.paired_ch, params.seacr_peak_threshold)
+    }
+
+    // ####################################################################################
+    // MultiQC
+    // ####################################################################################
+
+    ch_multiqc_files = Channel.empty()
+        .mix(FASTQC.out.zip.map              { _meta, f -> f })
+        .mix(TRIMGALORE.out.log.map          { _meta, f -> f })
+        .mix(BOWTIE2_TARGET_ALIGN.out.log.map { _meta, f -> f })
+        .mix(SAMTOOLS_VIEW_SORT.out.stats.map    { _meta, f -> f })
+        .mix(SAMTOOLS_VIEW_SORT.out.flagstat.map { _meta, f -> f })
+        .mix(SAMTOOLS_VIEW_SORT.out.idxstats.map { _meta, f -> f })
+
+    MULTIQC(
+        ch_multiqc_files.collect(),
+        Channel.value(file("${projectDir}/assets/multiqc_config.yml", checkIfExists: true)),
+        [],
+        [],
+        [],
+        []
+    )
+}

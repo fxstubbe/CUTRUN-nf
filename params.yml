@@ -19,7 +19,6 @@ spike_genome: 'EB1'
 normalisation_to_spikein: true
 normalisation_mode: 'CPM'
 
-#Make genomic tiles
+#Genomic windows: one bins x libraries matrix per size (bp)
 split: true
-splitsize: '5kb'
-splitwindows: '/home/users/s/stubbe/resources/Genomic_windows/5kb_WBCel235.bed'
+window_sizes: '1000,5000,10000,20000,50000,100000'

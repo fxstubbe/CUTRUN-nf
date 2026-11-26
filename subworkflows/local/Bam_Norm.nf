@@ -1,101 +1,78 @@
+/*
+ * Spike-in scale factors, normalised bedGraph and bigWig tracks
+ *
+ * scale factor = params.normalisation_c / concordantly aligned spike-in pairs, where the
+ * spike-in alignment is run on the read pairs that did NOT align to the target genome.
+ */
 
-include { DEEPTOOLS_BAMCOVERAGE } from '../../modules/nf-core/deeptools/bamcoverage/main'
-include { BEDTOOLS_GENOMECOV } from '../../modules/nf-core/bedtools/genomecov/main'
+include { DEEPTOOLS_BAMCOVERAGE                                 } from '../../modules/nf-core/deeptools/bamcoverage/main'
+include { UCSC_BEDGRAPHTOBIGWIG                                 } from '../../modules/nf-core/ucsc/bedgraphtobigwig/main'
+include { BEDTOOLS_GENOMECOV                                    } from '../../modules/nf-core/bedtools/genomecov/main'
 
+// Concordant pairs (exactly 1 time + >1 times) from a paired-end bowtie2 log
+def countSpikeinPairs(logFile) {
+    long n = 0
+    logFile.eachLine { line ->
+        def m = line =~ /^\s*(\d+)\s+\([\d.]+%\)\s+aligned concordantly (exactly 1 time|>1 times)/
+        if (m.find()) {
+            n += m.group(1).toLong()
+        }
+    }
+    return n
+}
 
 workflow BAM_NORM {
 
     take:
-    deeptools_ch                // channel of tuples: [meta, bam, bai]
-    fasta_only_channel_dp       // fasta only channel
-    fasta_fai_channel           // fasta fai channel
-    spikein_bowtie2_log         // channel of tuples: [meta, log_file]
-    sizes_ch                     // channel of chromosome sizes   [meta, sizes]
-
+    ch_bam_bai      // channel: [ meta, bam, bai ]   filtered, coordinate-sorted
+    ch_fasta        // value  : fasta
+    ch_fai          // value  : fasta.fai
+    ch_spike_log    // channel: [ meta, spike-in bowtie2 log ]
+    ch_sizes        // value  : chromosome sizes
 
     main:
 
+    ch_scale = ch_spike_log.map { meta, logFile ->
+        def pairs = countSpikeinPairs(logFile)
+        if (pairs == 0) {
+            log.warn "[${meta.id}] no concordant spike-in pairs: scale factor set to 1, this library is NOT spike-in normalised"
+        }
+        def sf = pairs > 0 ? (params.normalisation_c as double) / pairs : 1.0d
+        [ meta, pairs, sf ]
+    }
 
-    //Make the Coverage file binned with bedtools
+    // <outdir>/scale_factors.csv  (first two columns unchanged from earlier versions)
+    ch_scale
+        .map { meta, pairs, sf -> "${meta.id},${sf},${pairs}" }
+        .collectFile(name: 'scale_factors.csv', newLine: true, sort: true,
+                     seed: 'sample_id,scale_factor,spikein_pairs', storeDir: params.outdir)
 
+    ch_bam_scale = ch_bam_bai.join(ch_scale)    // [ meta, bam, bai, pairs, sf ]
 
+    // bedGraph (SEACR input): spike-in scaled, or raw when normalisation_to_spikein = false
+    ch_genomecov_in = ch_bam_scale.map { meta, bam, _bai, _pairs, sf ->
+        params.normalisation_to_spikein.toString().toBoolean() ?
+            [ meta + [norm: 'spikein'], bam, sf ] :
+            [ meta + [norm: 'raw'],     bam, 1  ]
+    }
+    BEDTOOLS_GENOMECOV(ch_genomecov_in, ch_sizes, 'bedgraph', true)
 
-    if (params.normalisation_to_spikein) {
+    // Depth-normalised bigWig (params.normalisation_mode), always produced
+    DEEPTOOLS_BAMCOVERAGE(ch_bam_bai, ch_fasta, ch_fai)
 
-        //
-        // Compute the Scale factor and join in a channel for bedtools
-        // 
+    // Spike-in scaled bigWig: the bedGraph itself converted, so the browser track carries
+    // exactly the values SEACR sees (fragment coverage x scale factor, 1 bp resolution).
+    // A bamCoverage --scaleFactor track would not: bamCoverage counts both mates and every
+    // fragment overlapping a bin, which inflates it ~2 x (L + bin) / L for fragment length L.
+    ch_bigwig_spikein = Channel.empty()
+    if (params.normalisation_to_spikein.toString().toBoolean()) {
+        UCSC_BEDGRAPHTOBIGWIG(BEDTOOLS_GENOMECOV.out.genomecov, ch_sizes)
+        ch_bigwig_spikein = UCSC_BEDGRAPHTOBIGWIG.out.bigwig
+    }
 
-        bedtools_ch = deeptools_ch
-            .map { meta, bam, bai -> [meta, bam] }  // left: [id, [meta, bam]]
-            .join(
-                spikein_bowtie2_log.map { meta, log_file ->
-                    def aligned_count = log_file.text
-                        .split('\n')
-                        .findAll { it =~ /aligned concordantly (exactly 1 time|>1 times)/ }
-                        .sum { it.split()[0].toInteger() }
-                    def scale_factor = params.normalisation_c / (aligned_count != 0 ? aligned_count : params.normalisation_c)
-                    [meta, scale_factor]  // right: [id, scale_factor]
-                }
-            )
-
-        //  
-        // Output the scale factors as a CSV file
-        // 
-
-        ch_scale_factors_csv = bedtools_ch
-            .map { meta, bam, scale_factor -> "${meta.id},${scale_factor}" }
-            .toList()
-       scale_factors_csv =  WriteScaleFactors(ch_scale_factors_csv)
-
-        //
-        // Run BEDTOOLS
-        // 
-
-        sizes_only = sizes_ch.map{ meta, sizes -> [sizes]}
-        sizes_only.view()
-    
-        BEDTOOLS_GENOMECOV(
-            bedtools_ch,
-            sizes_only,
-            "bedgraph",
-            true
-         )
-    
-
-        // Collect scale factors into a CSV
-
-    } 
-        
-    // Call DEEPTOOLS_BAMCOVERAGE without the scale factor
-    // This is ALWAYS RUN
-    DEEPTOOLS_BAMCOVERAGE(
-        deeptools_ch,
-        fasta_only_channel_dp,
-        fasta_fai_channel
-    )
-    
+    emit:
+    bedgraph       = BEDTOOLS_GENOMECOV.out.genomecov   // [ meta, bedgraph ]
+    scale          = ch_scale                           // [ meta, spike-in pairs, scale factor ]
+    bigwig         = DEEPTOOLS_BAMCOVERAGE.out.bigwig
+    bigwig_spikein = ch_bigwig_spikein
 }
-
-
-process WriteScaleFactors {
-    tag "scale_factors_csv"
-
-    input:
-    val list
-
-    output:
-    path "scale_factors.csv"  // File must be created in the work dir
-
-   // publishDir:
-   // path "${params.outdir}", mode: 'copy'  // Copy it to the final output dir
-
-    script:
-    """
-    echo "sample_id,scale_factor" > scale_factors.csv
-    printf "%s\\n" ${list.join(" ")} >> scale_factors.csv
-    """
-}
-
-
-

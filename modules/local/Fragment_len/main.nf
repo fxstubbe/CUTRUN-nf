@@ -15,9 +15,6 @@ process FRAGMENT_LEN {
     tuple val(meta), path("*.txt") , emit: tsv
     path  "versions.yml"           , emit: versions
 
-    when:
-    params.fragment_len_reporting  // only run if true
-
     script:
     def args     = task.ext.args ?: ''
     def args2    = task.ext.args2 ?: ''
